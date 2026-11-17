@@ -26,7 +26,7 @@ jobs:
   extract-single-request:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/aniskip-runner:latest
+      image: ghcr.io/masterace005/runner:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
