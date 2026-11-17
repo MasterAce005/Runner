@@ -1,0 +1,73 @@
+name: Trigger Manual OP/ED Extraction from Web Studio
+
+on:
+  repository_dispatch:
+    types: [manual_studio_extract]
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Nyaa / SubsPlease / Stream URL (leave megaplay://auto for MegaPlay)'
+        required: false
+        default: 'megaplay://auto'
+      mal_id:
+        description: 'MAL Anime ID (Required for MegaPlay, optional for torrents)'
+        required: false
+        default: ''
+      episode:
+        description: 'Episode Number (Optional, auto-detected if empty)'
+        required: false
+        default: ''
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  extract-single-request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Media Tools & aria2c
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aria2 mkvtoolnix mediainfo ffmpeg
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Mount Vault in Memory & Execute Single Extract
+        run: |
+          set +x
+          echo "[VAULT] Securely mounting engine modules in runner memory..."
+          git clone --depth 1 https://${{ secrets.VAULT_PAT }}@github.com/${{ secrets.VAULT_REPO }}.git vault_core
+          cd vault_core
+          npm install --production
+
+          node scripts/extract.mjs
+
+          # Sync & Push to Private Vault Repo
+          RESULT_FILE=$(find temp -name "result_*.json" 2>/dev/null | head -n 1)
+          if [[ -n "$RESULT_FILE" && -f "$RESULT_FILE" ]]; then
+            export RESULT_PAYLOAD=$(cat "$RESULT_FILE")
+            export TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}"
+            export TELEGRAM_CHAT_ID="${{ secrets.TELEGRAM_CHAT_ID }}"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git remote set-url origin https://${{ secrets.VAULT_PAT }}@github.com/${{ secrets.VAULT_REPO }}.git
+            node scripts/sync_commit.mjs
+            node scripts/backup_telegram.mjs || true
+          fi
+
+          # Cleanup older successful runs
+          export GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          export RUNNER_PAT="${{ secrets.VAULT_PAT }}"
+          export GITHUB_REPOSITORY="${{ github.repository }}"
+          export GITHUB_RUN_ID="${{ github.run_id }}"
+          node scripts/cleanup_runs.mjs
+        env:
+          TASK_PAYLOAD: ${{ github.event_name == 'repository_dispatch' && toJson(github.event.client_payload) || toJson(inputs) }}
+          VAULT_PAT: ${{ secrets.VAULT_PAT }}
+          VAULT_REPO: ${{ secrets.VAULT_REPO }}
+          MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
+          TORBOX_API_KEY: ${{ secrets.TORBOX_API_KEY }}

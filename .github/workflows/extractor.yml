@@ -1,0 +1,86 @@
+name: Episode Timestamp Extractor Engine
+
+on:
+  repository_dispatch:
+    types: [extract_new_episodes]
+  workflow_dispatch:
+    inputs:
+      raw_payload:
+        description: 'JSON array of episode tasks or single task'
+        required: false
+        default: '[]'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  extract-batch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Media Tools & aria2c
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aria2 mkvtoolnix mediainfo ffmpeg
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Mount Vault in Memory & Execute Safe Batch Extraction
+        run: |
+          set +x
+          echo "[VAULT] Securely mounting engine modules in runner memory..."
+          git clone --depth 1 https://${{ secrets.VAULT_PAT }}@github.com/${{ secrets.VAULT_REPO }}.git vault_core
+          cd vault_core
+          npm install --production
+
+          # Run Extraction Engine (Handles single task or array of tasks safely inside ONE runner)
+          node scripts/extract.mjs
+
+          # Sync & Push all detected results to Private Vault Repo
+          RESULT_FILES=$(find temp -name "result_*.json" 2>/dev/null)
+          if [[ -n "$RESULT_FILES" ]]; then
+            export TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}"
+            export TELEGRAM_CHAT_ID="${{ secrets.TELEGRAM_CHAT_ID }}"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git remote set-url origin https://${{ secrets.VAULT_PAT }}@github.com/${{ secrets.VAULT_REPO }}.git
+
+            for rf in $RESULT_FILES; do
+              export RESULT_PAYLOAD=$(cat "$rf")
+              node scripts/sync_commit.mjs || true
+            done
+            node scripts/backup_telegram.mjs || true
+          fi
+        env:
+          TASK_PAYLOAD: ${{ github.event_name == 'repository_dispatch' && toJson(github.event.client_payload.items) || inputs.raw_payload }}
+          VAULT_PAT: ${{ secrets.VAULT_PAT }}
+          VAULT_REPO: ${{ secrets.VAULT_REPO }}
+          MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
+          TORBOX_API_KEY: ${{ secrets.TORBOX_API_KEY }}
+
+  cleanup-successful-runs:
+    needs: extract-batch
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cleanup Past Successful Runs (Preserve Failed, Running & Queued)
+        run: |
+          set +x
+          git clone --depth 1 https://${{ secrets.VAULT_PAT }}@github.com/${{ secrets.VAULT_REPO }}.git vault_core
+          cd vault_core
+          export GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          export RUNNER_PAT="${{ secrets.VAULT_PAT }}"
+          export GITHUB_REPOSITORY="${{ github.repository }}"
+          export GITHUB_RUN_ID="${{ github.run_id }}"
+          node scripts/cleanup_runs.mjs
+        env:
+          VAULT_PAT: ${{ secrets.VAULT_PAT }}
+          VAULT_REPO: ${{ secrets.VAULT_REPO }}
