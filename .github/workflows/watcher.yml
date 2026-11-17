@@ -1,35 +1,34 @@
-name: 24/7 Watcher Daemon
+name: 1-Shot Release Watcher
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */2 * * *'
   workflow_dispatch:
 
 concurrency:
-  group: runner-watcher-24-7
-  cancel-in-progress: true
+  group: runner-watcher-oneshot
+  cancel-in-progress: false
 
 permissions:
   actions: write
   contents: read
 
 jobs:
-  run-stealth-watcher:
+  check-new-releases:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Mount Vault in Memory & Execute 5-Hour Watcher
+      - name: Check Nyaa RSS & Dispatch New Episodes
         run: |
           set +x
-          echo "[VAULT] Securely mounting engine modules in runner memory..."
           git clone --depth 1 https://${{ secrets.VAULT_PAT }}@github.com/${{ secrets.VAULT_REPO }}.git vault_core
           cd vault_core
           npm install --production
-          echo "[VAULT] Core mounted successfully. Starting autonomous watcher..."
           export GITHUB_TOKEN="${{ secrets.VAULT_PAT }}"
           export GITHUB_REPOSITORY="${{ github.repository }}"
           export MAL_CLIENT_ID="${{ secrets.MAL_CLIENT_ID }}"
@@ -38,20 +37,3 @@ jobs:
           VAULT_PAT: ${{ secrets.VAULT_PAT }}
           VAULT_REPO: ${{ secrets.VAULT_REPO }}
           MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
-
-      - name: Cool-off Pause (Exact 5 Minutes Gap)
-        run: |
-          echo "5-Hour cycle completed. Entering 5-minute cool-off period..."
-          sleep 300
-          echo "Cool-off complete. Triggering next 5-hour cycle..."
-
-      - name: Self-Dispatch Next 5-Hour Cycle
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'watcher.yml',
-              ref: 'main'
-            });

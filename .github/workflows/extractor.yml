@@ -17,16 +17,12 @@ permissions:
 jobs:
   extract-batch:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/aniskip-runner:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Install Media Tools & aria2c
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y aria2 mkvtoolnix mediainfo ffmpeg
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
 
       - name: Mount Vault in Memory & Execute Safe Batch Extraction
         run: |
@@ -60,27 +56,3 @@ jobs:
           VAULT_REPO: ${{ secrets.VAULT_REPO }}
           MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
           TORBOX_API_KEY: ${{ secrets.TORBOX_API_KEY }}
-
-  cleanup-successful-runs:
-    needs: extract-batch
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Cleanup Past Successful Runs (Preserve Failed, Running & Queued)
-        run: |
-          set +x
-          git clone --depth 1 https://${{ secrets.VAULT_PAT }}@github.com/${{ secrets.VAULT_REPO }}.git vault_core
-          cd vault_core
-          export GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          export RUNNER_PAT="${{ secrets.VAULT_PAT }}"
-          export GITHUB_REPOSITORY="${{ github.repository }}"
-          export GITHUB_RUN_ID="${{ github.run_id }}"
-          node scripts/cleanup_runs.mjs
-        env:
-          VAULT_PAT: ${{ secrets.VAULT_PAT }}
-          VAULT_REPO: ${{ secrets.VAULT_REPO }}

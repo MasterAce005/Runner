@@ -25,16 +25,12 @@ permissions:
 jobs:
   extract-single-request:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/aniskip-runner:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Install Media Tools & aria2c
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y aria2 mkvtoolnix mediainfo ffmpeg
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
 
       - name: Mount Vault in Memory & Execute Single Extract
         run: |
@@ -59,12 +55,6 @@ jobs:
             node scripts/backup_telegram.mjs || true
           fi
 
-          # Cleanup older successful runs
-          export GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          export RUNNER_PAT="${{ secrets.VAULT_PAT }}"
-          export GITHUB_REPOSITORY="${{ github.repository }}"
-          export GITHUB_RUN_ID="${{ github.run_id }}"
-          node scripts/cleanup_runs.mjs
         env:
           TASK_PAYLOAD: ${{ github.event_name == 'repository_dispatch' && toJson(github.event.client_payload) || toJson(inputs) }}
           VAULT_PAT: ${{ secrets.VAULT_PAT }}
