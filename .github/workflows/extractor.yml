@@ -37,7 +37,7 @@ jobs:
 
           # Sync & Push all detected results to Private Vault Repo in 1 Single Atomic Commit
           RESULT_FILES=$(find temp -name "result_*.json" 2>/dev/null)
-          if [[ -n "$RESULT_FILES" ]]; then
+          if [ -n "$RESULT_FILES" ]; then
             export TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}"
             export TELEGRAM_CHAT_ID="${{ secrets.TELEGRAM_CHAT_ID }}"
             git config user.name "github-actions[bot]"
