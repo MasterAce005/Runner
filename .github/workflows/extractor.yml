@@ -19,15 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - name: Setup Cloudflare WARP (Bypass Datacenter 403 blocks)
+      - name: Setup Ultra-Fast Cloudflare WARP (WireGuard Mode)
         uses: fscarmen/warp-on-actions@v1.4
         with:
-          mode: client
-          stack: dual
-
-      - name: Verify Clean WARP IP
-        run: |
-          curl -s https://cloudflare.com/cdn-cgi/trace | grep -E 'warp=|ip='
+          mode: wireguard
+          stack: ipv4
 
       - name: Setup Node.js & Tools
         uses: actions/setup-node@v4
