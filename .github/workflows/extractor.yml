@@ -17,39 +17,51 @@ permissions:
 jobs:
   extract-batch:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/masterace005/runner:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
 
-      - name: Mount Vault in Memory & Execute Safe Batch Extraction
+      - name: Start Cloudflare WARP (WireGuard)
+        uses: fscarmen/warp-on-actions@v1.4
+        with:
+          mode: wireguard
+          stack: ipv4
+
+      - name: Log In to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Execute Extraction in Docker using Host Network (Inherits WARP)
         run: |
-          set +x
-          echo "[VAULT] Securely mounting engine modules in runner memory..."
-          git clone --depth 1 https://${{ secrets.VAULT_PAT }}@github.com/${{ secrets.VAULT_REPO }}.git vault_core
-          cd vault_core
-          npm install --production
+          docker run --rm --network host \
+            -e TASK_PAYLOAD="$TASK_PAYLOAD" \
+            -e VAULT_PAT="${{ secrets.VAULT_PAT }}" \
+            -e VAULT_REPO="${{ secrets.VAULT_REPO }}" \
+            -e MAL_CLIENT_ID="${{ secrets.MAL_CLIENT_ID }}" \
+            -e TORBOX_API_KEY="${{ secrets.TORBOX_API_KEY }}" \
+            -e TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            -e TELEGRAM_CHAT_ID="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            ghcr.io/masterace005/runner:latest sh -c '
+              set +x
+              echo "[VAULT] Securely mounting engine modules in runner memory..."
+              git clone --depth 1 https://$VAULT_PAT@github.com/$VAULT_REPO.git vault_core
+              cd vault_core
+              npm install --production
 
-          # Run Extraction Engine (Handles single task or array of tasks safely inside ONE runner)
-          node scripts/extract.mjs
+              # Run Extraction Engine
+              node scripts/extract.mjs
 
-          # Sync & Push all detected results to Private Vault Repo in 1 Single Atomic Commit
-          RESULT_FILES=$(find temp -name "result_*.json" 2>/dev/null)
-          if [ -n "$RESULT_FILES" ]; then
-            export TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}"
-            export TELEGRAM_CHAT_ID="${{ secrets.TELEGRAM_CHAT_ID }}"
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git remote set-url origin https://${{ secrets.VAULT_PAT }}@github.com/${{ secrets.VAULT_REPO }}.git
+              # Sync & Push results
+              RESULT_FILES=$(find temp -name "result_*.json" 2>/dev/null)
+              if [ -n "$RESULT_FILES" ]; then
+                git config user.name "github-actions[bot]"
+                git config user.email "github-actions[bot]@users.noreply.github.com"
+                git remote set-url origin https://$VAULT_PAT@github.com/$VAULT_REPO.git
 
-            node scripts/sync_commit.mjs || true
-            node scripts/backup_telegram.mjs || true
-          fi
+                node scripts/sync_commit.mjs || true
+                node scripts/backup_telegram.mjs || true
+              fi
+            '
         env:
           TASK_PAYLOAD: ${{ github.event_name == 'repository_dispatch' && toJson(github.event.client_payload.items) || inputs.raw_payload }}
-          VAULT_PAT: ${{ secrets.VAULT_PAT }}
-          VAULT_REPO: ${{ secrets.VAULT_REPO }}
-          MAL_CLIENT_ID: ${{ secrets.MAL_CLIENT_ID }}
-          TORBOX_API_KEY: ${{ secrets.TORBOX_API_KEY }}
